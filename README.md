@@ -1,4 +1,4 @@
-# Cevi Project
+# varicose
 
 This repository contains the full stack for the Cevi project.
 
