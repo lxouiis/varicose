@@ -1,0 +1,5 @@
+
+> cevi-backend@1.0.0 start
+> node dist/index.js
+
+Server running on port 3001
