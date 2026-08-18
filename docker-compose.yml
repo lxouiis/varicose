@@ -54,9 +54,10 @@ services:
       JWT_SECRET:      "${JWT_SECRET:-cevi-jnmc-hospital-prod-secret-2026-CHANGE-THIS}"
       PORT:            3002
       NODE_ENV:        production
-      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-https://192.168.1.100,http://192.168.1.100}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-https://10.0.11.244,http://10.0.11.244}"
     # ⚠️ NO host ports mapping — Backend port 3002 is ONLY accessible via Nginx reverse proxy
     volumes:
+      # Uploaded patient images/doppler files persist across container restarts
       - cevi_storage:/app/storage
     depends_on:
       db:
@@ -70,7 +71,7 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: "${VITE_API_URL:-https://192.168.1.100/api}"
+        VITE_API_URL: "${VITE_API_URL:-https://10.0.11.244/api}"
     container_name: cevi_frontend
     restart: unless-stopped
     ports:
