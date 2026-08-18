@@ -88,9 +88,10 @@ export function AssessmentForm() {
   }, [height, weight]);
 
   // ── Section 1: History ─────────────
-  const [comorbidities, setComorbidities] = useState<string[]>(latestAssessment?.comorbidities || existingPatient?.comorbidities || []);
-  const [venousHistory, setVenousHistory] = useState<string[]>(latestAssessment?.venousHistory || existingPatient?.venousHistory || []);
-  const [medications, setMedications]     = useState<string[]>(existingPatient?.currentMedications || []);
+  // v2: per-visit fields come from Assessment, not Patient
+  const [comorbidities, setComorbidities] = useState<string[]>(latestAssessment?.comorbidities || []);
+  const [venousHistory, setVenousHistory] = useState<string[]>(latestAssessment?.venousHistory || []);
+  const [medications, setMedications]     = useState<string[]>(latestAssessment?.medications   || []);
   const [clinicalNotes, setClinicalNotes] = useState(latestAssessment?.clinicalNotes || "");
 
   const [bp, setBp]                       = useState("");
@@ -143,13 +144,14 @@ export function AssessmentForm() {
         if (existingPatient.occupationType?.length) setOccupation(existingPatient.occupationType);
         if (existingPatient.parity) setParity(existingPatient.parity.toString());
 
-        // Pre-populate from latest assessment
+        // Pre-populate from latest assessment (per-visit fields live here in v2)
         if (latest.comorbidities?.length) setComorbidities(latest.comorbidities);
         if (latest.venousHistory?.length) setVenousHistory(latest.venousHistory);
-        if (latest.clinicalNotes) setClinicalNotes(latest.clinicalNotes);
-        if (latest.rightPainVas) setRightPainVas(latest.rightPainVas);
-        if (latest.leftPainVas) setLeftPainVas(latest.leftPainVas);
-        if (latest.veinesNotes) setVeinesNotes(latest.veinesNotes);
+        if (latest.medications?.length)   setMedications(latest.medications);
+        if (latest.clinicalNotes)         setClinicalNotes(latest.clinicalNotes);
+        if (latest.rightPainVas)          setRightPainVas(latest.rightPainVas);
+        if (latest.leftPainVas)           setLeftPainVas(latest.leftPainVas);
+        if (latest.veinesNotes)           setVeinesNotes(latest.veinesNotes);
 
         // Pre-populate leg data (doppler, rVCSS, clinical signs)
         if (latest.rightLeg) {
@@ -268,11 +270,14 @@ export function AssessmentForm() {
         return;
       }
       try {
+        // v2: addPatient only receives STATIC DEMOGRAPHIC fields.
+        // Per-visit fields (comorbidities, medications, venousHistory, clinicalNotes,
+        // veinesNotes, bp, pulse, painVas) go to addAssessment() below.
         const newId = await addPatient({
           patientName: patientName.trim(),
           uhid: uhid.trim(),
           age: parseInt(age) || 0,
-          gender, // this comes straight from the state
+          gender,
           height: parseFloat(height) || undefined,
           weight: parseFloat(weight) || undefined,
           bmi: bmi || undefined,
@@ -280,15 +285,8 @@ export function AssessmentForm() {
           smokingStatus: smoking,
           occupationType: occupation,
           parity: parity ? parseInt(parity) : undefined,
-          currentMedications: medications,
-          comorbidities: comorbidities,
-          venousHistory: venousHistory,
-          clinicalNotes: clinicalNotes,
-          rightPainVas: rightPainVas,
-          leftPainVas: leftPainVas,
-          veinesNotes: veinesNotes,
         });
-        
+
         if (!newId) throw new Error("Failed to register patient (no ID returned).");
         finalPatientId = newId;
 
@@ -297,8 +295,8 @@ export function AssessmentForm() {
         return;
       }
     } else {
-      // Patient already exists — update their demographics so height/weight/
-      // smoking/comorbidities/etc. are persisted (not silently dropped)
+      // Patient already exists — update DEMOGRAPHICS ONLY.
+      // Per-visit fields go to the assessment below.
       try {
         await updatePatient(existingPatient.id, {
           patientName: patientName.trim(),
@@ -311,13 +309,6 @@ export function AssessmentForm() {
           smokingStatus: smoking,
           occupationType: occupation,
           parity: parity ? parseInt(parity) : undefined,
-          currentMedications: medications,
-          comorbidities: comorbidities,
-          venousHistory: venousHistory,
-          clinicalNotes: clinicalNotes,
-          rightPainVas: rightPainVas,
-          leftPainVas: leftPainVas,
-          veinesNotes: veinesNotes,
         });
       } catch (err: any) {
         console.error('Failed to update patient demographics:', err);
@@ -327,22 +318,33 @@ export function AssessmentForm() {
     try {
       const assessmentResponse = await addAssessment({
         patientId: finalPatientId!,
-        comorbidities, venousHistory, clinicalNotes,
-        rightLeg: { 
+        // Per-visit history (v2: now on Assessment, not Patient)
+        comorbidities,
+        venousHistory,
+        medications,
+        clinicalNotes,
+        veinesNotes,
+        // General exam — NOW properly sent (fixing silent data loss)
+        bp,
+        pulse: pulse ? parseInt(pulse) : undefined,
+        generalSigns,
+        // Legs
+        rightLeg: {
           ...rightLeg,
           commonFemoralVein: rightCommonFemoral,
           superficialFemoralVein: rightSuperficialFemoral,
           poplitealVeinStatus: rightPoplitealStatus,
-          etiology: rightEtiology
+          etiology: rightEtiology,
         },
-        leftLeg:  { 
+        leftLeg: {
           ...leftLeg,
           commonFemoralVein: leftCommonFemoral,
           superficialFemoralVein: leftSuperficialFemoral,
           poplitealVeinStatus: leftPoplitealStatus,
-          etiology: leftEtiology
+          etiology: leftEtiology,
         },
-        rightPainVas, leftPainVas, veinesNotes,
+        rightPainVas,
+        leftPainVas,
         // Pass doppler clinical metadata (without File blobs — not serializable)
         dopplerImages: dopplerImages.map(({ file, ...rest }) => rest),
       });
@@ -914,7 +916,7 @@ export function AssessmentForm() {
                     ))}
                   </div>
                   {etiology && (
-                    <p className="text-xs text-[#1a6b5c] font-semibold">Selected: E{etiology}</p>
+                    <p className="text-xs text-[#1a6b5c] font-semibold">Selected: {etiology}</p>
                   )}
                 </div>
               ))}

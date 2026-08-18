@@ -16,6 +16,13 @@ import fileRoutes from './routes/files';
 // Load env vars
 dotenv.config();
 
+// ── Security: fail fast if critical secrets are missing ──────────────────────
+if (!process.env.JWT_SECRET) {
+  console.error('[FATAL] JWT_SECRET environment variable is not set.');
+  console.error('[FATAL] Server refusing to start to protect patient data.');
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -24,9 +31,28 @@ app.use(helmet({
   crossOriginResourcePolicy: false, // Allow local images to be loaded
 }));
 
-// CORS Configuration (Requirement 21)
+// CORS — restricted to intranet only. In Docker, frontend+backend are on the same
+// internal network. The only external origin is the hospital's LAN IP (served by Nginx).
+// Accept the server's own LAN address and localhost for dev.
+const allowedOrigins = [
+  'http://localhost:5173',   // dev
+  'http://localhost:3000',   // dev alt
+  'http://localhost',        // Docker Nginx on port 80
+  ...(process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
+    : []),
+];
 app.use(cors({
-  origin: ['http://localhost:5173', 'http://cevi-hospital-prod-ip.local'], // Vite dev server and hypothetical production IP
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, Postman, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // Allow any http://192.168.x.x or http://10.x.x.x (RFC-1918 private ranges)
+    if (/^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
@@ -36,12 +62,6 @@ app.use(cors({
 app.options('*', cors());
 
 app.use(express.json());
-
-// Require Content-Type header on all responses (Requirement 23)
-app.use((req: Request, res: Response, next: express.NextFunction) => {
-  res.setHeader('Content-Type', 'application/json');
-  next();
-});
 
 // Health check (Requirement 33)
 app.get('/api/health', (req: Request, res: Response) => {
@@ -71,14 +91,18 @@ app.use('*', (req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });
 });
 
-// Global Error handler (Requirement 30)
+// Global Error handler
+// NOTE: Never send raw error.message or stack to the client — it may contain
+// table names, column names, SQL fragments, or file paths (patient data context).
 app.use((err: any, req: Request, res: Response, next: express.NextFunction) => {
   if (err.name === 'MulterError' && err.code === 'LIMIT_FILE_SIZE') {
-    res.status(400).json({ error: 'File size limit exceeded' });
+    res.status(400).json({ error: 'File size limit exceeded (max 50 MB)' });
     return;
   }
-  console.error('Unhandled Exception:', err.stack);
-  res.status(500).json({ error: err.message || 'Internal server error' });
+  // Log full detail server-side only
+  console.error('[Unhandled Exception]', err.stack || err);
+  // Generic message to client — no internal detail
+  res.status(500).json({ error: 'Internal server error' });
 });
 
 app.listen(PORT, () => {

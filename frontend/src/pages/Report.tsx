@@ -233,8 +233,13 @@ export function AssessmentReportPage() {
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
-    const [year, month, day] = dateString.split("-");
-    return `${day}/${month}/${year}`;
+    try {
+      return new Date(dateString).toLocaleDateString('en-IN', {
+        day: '2-digit', month: '2-digit', year: 'numeric'
+      });
+    } catch {
+      return dateString;
+    }
   };
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
@@ -345,7 +350,7 @@ export function AssessmentReportPage() {
         <div className="border-b-2 border-[#1a6b5c] pb-6 mb-8">
           <div className="flex justify-between items-start">
             <div className="flex items-center gap-4">
-              <img src={`${import.meta.env.BASE_URL}kle-logo.png`} alt="KLE Logo" className="h-12 object-contain" />
+              <img src={`${import.meta.env.BASE_URL}kle-logo.png`} alt="KLE Logo" style={{ height: '80px', width: 'auto', maxWidth: '300px', objectFit: 'contain' }} />
               <p className="text-sm font-medium text-slate-500 uppercase tracking-wider"></p>
             </div>
             <div className="text-right text-sm text-slate-600 space-y-1">
@@ -472,7 +477,7 @@ export function AssessmentReportPage() {
                           <XAxis type="number" domain={[0, 6]} tickCount={7} tick={{ fontSize: 11 }} />
                           <YAxis dataKey="param" type="category" tick={{ fill: '#475569', fontSize: 11 }} width={110} />
                           <RechartsTooltip
-                            formatter={(value: number, name: string) => [
+                            formatter={(value: number, name: string) => [ 
                               value,
                               name === 'prev' ? 'Previous Visit' : 'Current Visit'
                             ]}

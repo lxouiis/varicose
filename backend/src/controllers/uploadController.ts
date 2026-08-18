@@ -78,10 +78,11 @@ export const dopplerUpload = multer({
   },
 });
 
-// ── POST /api/images — Upload clinical image ──────────────────────────────────
+// ── POST /api/images — Upload clinical photograph ─────────────────────────────
+// Image table stores standard clinical photographs only.
+// NOTE: phase, segment, leg_side removed from Image — those belong on DopplerImage.
 export async function uploadImage(req: Request, res: Response): Promise<void> {
   try {
-    console.log('[uploadImage] req.body:', req.body);
 
     if (!req.file || req.file.size === 0) {
       if (req.file?.size === 0) fs.unlinkSync(req.file.path);
@@ -102,10 +103,10 @@ export async function uploadImage(req: Request, res: Response): Promise<void> {
         leg_id:     legId,
         file_path:  relativePath,
         view_type:  req.body.view_type  || 'photo',
-        phase:      req.body.phase      || null,
-        segment:    req.body.segment    || null,
-        leg_side:   req.body.leg_side   || null,
         view_label: req.body.view_label || null,
+        // NOTE: phase, segment, leg_side intentionally NOT written here.
+        //       If an upload sends these fields, they are ignored.
+        //       Ultrasound-specific data belongs in DopplerImage.
       },
     });
 
@@ -113,11 +114,12 @@ export async function uploadImage(req: Request, res: Response): Promise<void> {
     res.status(201).json(image);
   } catch (error) {
     console.error('Upload image error:', error);
-    res.status(500).json({ error: 'Database error', detail: (error as Error).message });
+    res.status(500).json({ error: 'Database error' });
   }
 }
 
-// ── POST /api/doppler — Legacy Doppler upload (backwards compat) ──────────────
+// ── POST /api/doppler — Legacy Doppler upload ─────────────────────────────────
+// DO NOT use for new uploads. Use /api/doppler-images instead.
 export async function uploadDoppler(req: Request, res: Response): Promise<void> {
   try {
     if (!req.file || req.file.size === 0) {
@@ -139,23 +141,26 @@ export async function uploadDoppler(req: Request, res: Response): Promise<void> 
         file_path:        relativePath,
         file_type:        ext,
         vein_type:        req.body.vein_type        || null,
-        vein_diameter:    req.body.vein_diameter    ? parseFloat(req.body.vein_diameter)    : null,
-        reflux_time:      req.body.reflux_time      ? parseFloat(req.body.reflux_time)      : null,
-        deep_vein_status: req.body.deep_vein_status || null,
+        vein_diameter:    req.body.vein_diameter     ? parseFloat(req.body.vein_diameter)  : null,
+        reflux_time:      req.body.reflux_time       ? parseFloat(req.body.reflux_time)    : null,
+        deep_vein_status: req.body.deep_vein_status  || null,
       },
     });
 
     res.status(201).json(doppler);
   } catch (error) {
     console.error('Upload doppler error:', error);
-    res.status(500).json({ error: 'Database error', detail: (error as Error).message });
+    res.status(500).json({ error: 'Database error' });
   }
 }
 
-// ── POST /api/doppler-images — Structured DopplerImage upload ─────────────────
+// ── POST /api/doppler-images — Structured DopplerImage upload (AI-ready) ──────
+// Each image/waveform gets its own row with identity (phase, segment, view_type)
+// and the doctor's reading labels (vein_status, compressible, reflux_ms, etc.).
+// This 1:1 image-to-label mapping is exactly what AI/CV training requires.
 export async function uploadDopplerImage(req: Request, res: Response): Promise<void> {
   try {
-    // File is now optional; data-only uploads are allowed.
+    // File is optional — data-only uploads are allowed.
     if (req.file?.size === 0) {
       fs.unlinkSync(req.file.path);
     }
@@ -163,20 +168,27 @@ export async function uploadDopplerImage(req: Request, res: Response): Promise<v
     const legId = parseInt(req.body.leg_id);
     if (isNaN(legId)) { res.status(400).json({ error: 'leg_id must be a number' }); return; }
 
-    const { leg_side, phase, segment, view_type, file_name } = req.body;
-    if (!leg_side || !phase || !segment) {
-      res.status(400).json({ error: 'leg_side, phase, and segment are required' });
+    const { phase, segment, view_type, file_name } = req.body;
+    if (!phase || !segment || !view_type) {
+      res.status(400).json({ error: 'phase, segment, and view_type are required' });
       return;
+    }
+
+    // NOTE: leg_side is no longer accepted — the leg_id already encodes side information.
+    if (req.body.leg_side) {
+      console.warn('[uploadDopplerImage] leg_side is deprecated and ignored — use leg_id instead.');
     }
 
     const leg = await prisma.leg.findUnique({ where: { id: legId } });
     if (!leg) { res.status(404).json({ error: 'Leg not found' }); return; }
 
     const relativePath = req.file && req.file.size > 0 ? path.relative(process.cwd(), req.file.path) : null;
-    const ext = req.file && req.file.size > 0 ? (path.extname(req.file.originalname).toLowerCase().replace('.', '') || 'jpg') : (req.body.file_path ? req.body.file_path.split('.').pop() : null);
+    const ext = req.file && req.file.size > 0
+      ? (path.extname(req.file.originalname).toLowerCase().replace('.', '') || 'jpg')
+      : (req.body.file_path ? req.body.file_path.split('.').pop() : null);
 
     const parseBool = (v: any): boolean | null => {
-      if (v === 'true' || v === true)  return true;
+      if (v === 'true'  || v === true)  return true;
       if (v === 'false' || v === false) return false;
       return null;
     };
@@ -186,19 +198,23 @@ export async function uploadDopplerImage(req: Request, res: Response): Promise<v
     const record = await prisma.dopplerImage.create({
       data: {
         leg_id:           legId,
-        leg_side:         leg_side,
-        phase:            phase,
-        segment:          segment,
-        view_type:        view_type || null,
+        phase,
+        segment,
+        view_type,
         file_path:        relativePath || req.body.file_path || null,
         file_name:        file_name || (req.file ? req.file.originalname : null),
         file_ext:         ext,
+        // Doctor label (AI training target)
+        vein_status:      req.body.vein_status      || null,
+        // Clinical readings
         compressible:     parseBool(req.body.compressible),
         spontaneous_flow: parseBool(req.body.spontaneous_flow),
         reflux_ms:        parseNum(req.body.reflux_ms),
         reflux_positive:  parseBool(req.body.reflux_positive),
         diameter_mm:      parseNum(req.body.diameter_mm),
         outward_flow:     parseBool(req.body.outward_flow),
+        doctor_notes:     req.body.doctor_notes     || null,
+        // NOTE: leg_side intentionally NOT written — redundant FK data removed per normalization.
       },
     });
 
@@ -206,6 +222,6 @@ export async function uploadDopplerImage(req: Request, res: Response): Promise<v
     res.status(201).json(record);
   } catch (error) {
     console.error('Upload doppler image error:', error);
-    res.status(500).json({ error: 'Database error', detail: (error as Error).message });
+    res.status(500).json({ error: 'Database error' });
   }
 }

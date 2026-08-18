@@ -6,8 +6,8 @@ const router = Router();
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Limit each IP to 10 login attempts per window
-  message: { error: 'Too many login attempts, please try again after 15 minutes' },
+  max: 50, // 50 attempts per IP per window (hospital NAT — many users share one IP)
+  message: { error: 'Too many login attempts from this network. Please try again after 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,
 });

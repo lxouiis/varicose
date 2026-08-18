@@ -17,7 +17,7 @@ export function Navbar() {
 
   return (
     <nav className="sticky top-0 z-40 w-full border-b bg-white">
-      <div className="container mx-auto flex h-16 items-center px-4 sm:px-8">
+      <div className="container mx-auto flex h-24 items-center px-4 sm:px-8">
         <Link to="/" className="flex items-center hover:opacity-90 transition-opacity">
           {imgError ? (
             <div className="flex items-center gap-3">
@@ -33,7 +33,7 @@ export function Navbar() {
             <img 
               src={`${import.meta.env.BASE_URL}kle-logo.png`}
               alt="KLE Tech" 
-              className="h-10" 
+              style={{ height: '80px', width: 'auto', maxWidth: '280px', objectFit: 'contain' }} 
               onError={() => setImgError(true)} 
             />
           )}

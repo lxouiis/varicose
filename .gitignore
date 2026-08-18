@@ -1,10 +1,39 @@
-# Node
+# Dependencies
 node_modules/
 dist/
 build/
-.env
 
-# Python
+# Environment & Secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Database Dumps & Backups (CRITICAL HIPAA / Patient Data Protection)
+*.sql
+*.sqlite
+*.db
+*.db-journal
+backups/
+storage/
+backend/storage/
+backend/cevi_backup*.sql
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Temp & Analysis files
+database_handoff*
+schema_comparison*
+frontend/public/temp.png
+frontend/public/*.1png
+
+# Python / AI notebooks
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
@@ -12,3 +41,4 @@ venv/
 
 # OS files
 .DS_Store
+Thumbs.db

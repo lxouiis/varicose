@@ -24,8 +24,14 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   }
 
   const token = authHeader.split(' ')[1];
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    // Should never reach here — server exits at startup if secret is missing
+    res.status(503).json({ error: 'Server configuration error' });
+    return;
+  }
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback-secret') as AuthPayload;
+    const decoded = jwt.verify(token, secret) as AuthPayload;
     req.user = decoded;
     next();
   } catch {

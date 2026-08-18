@@ -40,7 +40,7 @@ export function Login() {
           <img
             src={`${import.meta.env.BASE_URL}kle-logo.png`}
             alt="KLE Tech"
-            className="h-14 object-contain"
+            style={{ height: '80px', width: 'auto', maxWidth: '380px', objectFit: 'contain' }}
             onError={(e) => {
               e.currentTarget.style.display = 'none';
             }}

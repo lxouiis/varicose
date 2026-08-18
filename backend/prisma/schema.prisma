@@ -7,58 +7,76 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ==============================================================
+// Normalized CVI Registry Schema (Production — v2)
+// ==============================================================
+
 model Doctor {
-  id         Int      @id @default(autoincrement())
-  email      String   @unique
-  password   String
-  name       String
-  role       String   @default("radiologist")
-  created_at DateTime @default(now())
+  id          Int          @id @default(autoincrement())
+  email       String       @unique
+  password    String
+  name        String
+  role        String       @default("radiologist")
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  assessments Assessment[]
 }
 
 model Patient {
-  id             String   @id @default(uuid())
-  name           String
-  uhid           String   @unique
-  age            Int
-  sex            String
-  height         Float?
-  weight         Float?
-  bmi            Float?
-  race           String?
-  smoking        String?
-  occupation     String?
-  parity         Int?
-  comorbidities  String?
-  medications    String?
-  venous_history String?
-  dvt_history    Boolean  @default(false)
-  clinic         String?
-  doctor_notes   String?
-  clinical_notes String?  @db.Text
-  r_pain_vas     Float?
-  l_pain_vas     Float?
-  veines_notes   String?  @db.Text
-  created_at     DateTime @default(now())
-  legs           Leg[]
-  assessments    Assessment[]
+  id           String   @id @default(uuid())
+  name         String
+  uhid         String   @unique
+  age          Int
+  sex          String
+  height       Float?
+  weight       Float?
+  bmi          Float?
+  race         String?  // South Asian | Asian | Caucasian | African | Other
+  smoking      String?  // JSON Array: Never, Former, Current
+  occupation   String?  // JSON Array
+  parity       Int?     // Female only
+  dvt_history  Boolean  @default(false)
+  clinic       String?
+  doctor_notes String?
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  legs        Leg[]
+  assessments Assessment[]
+  auditLogs   AuditLog[]
+
+  // NOTE: comorbidities, medications, venous_history, clinical_notes,
+  // veines_notes have been MOVED to Assessment (per-visit data).
+  // r_pain_vas / l_pain_vas have been MOVED to Leg.pain_vas (per-visit, per-leg).
 }
 
 model Assessment {
-  id             String    @id @default(uuid())
-  patient_id     String
-  patient        Patient   @relation(fields: [patient_id], references: [id], onDelete: Cascade)
-  assessed_by    String?
+  id              String   @id @default(uuid())
+  patient_id      String
+  patient         Patient  @relation(fields: [patient_id], references: [id], onDelete: Cascade)
+  doctor_id       Int?     // FK to Doctor — nullable to avoid breaking existing records
+  doctor          Doctor?  @relation(fields: [doctor_id], references: [id])
   assessment_date DateTime @default(now())
-  comorbidities  String?   // JSON
-  venous_history String?   // JSON
-  clinical_notes String?
-  right_pain_vas Int?
-  left_pain_vas  Int?
-  veines_notes   String?
-  global_rvcss   Int       @default(0)
+  updated_at      DateTime @updatedAt
 
-  legs           Leg[]
+  // Per-Visit Medical History (moved from Patient)
+  comorbidities  String? // JSON Array
+  venous_history String? // JSON Array
+  medications    String? // JSON Array (moved from Patient)
+
+  // General Physical Exam (previously silently dropped — now saved)
+  bp            String? // Blood Pressure e.g. "120/80 mmHg"
+  pulse         Int?    // Pulse Rate in bpm
+  general_signs String? // JSON Array: Pallor, Icterus, Clubbing, Cyanosis
+
+  clinical_notes String?
+  veines_notes   String? // VEINES-QOL notes
+
+  // NOTE: right_pain_vas / left_pain_vas removed — pain_vas is per-leg (Leg.pain_vas).
+  // NOTE: global_rvcss removed — computed on-the-fly in API responses.
+  // NOTE: assessed_by removed — replaced by doctor_id FK.
+
+  legs Leg[]
 }
 
 model Leg {
@@ -67,45 +85,22 @@ model Leg {
   patient       Patient     @relation(fields: [patient_id], references: [id], onDelete: Cascade)
   assessment_id String?
   assessment    Assessment? @relation(fields: [assessment_id], references: [id], onDelete: Cascade)
-  leg_side      String
-  visit_number  Int         @default(1)
+  leg_side      String      // 'right' | 'left'
   visited_at    DateTime    @default(now())
+  updated_at    DateTime    @updatedAt
 
-  // Deep System Doppler
-  deep_system              String?
-  common_femoral_vein      String?
-  superficial_femoral_vein String?
-  popliteal_vein           String?
-  sfj_reflux               Boolean @default(false)
+  // --- Clinical Labels (Doctor assigned) ---
+  ceap_c String? // C0-C6
+  ceap_e String? // Ep, Es, Ec, En
+  ceap_a String? // As, Ap, Ad, An
+  ceap_p String? // Pr, Po, Pr,o, Pn
 
-  // Vein status fields (new)
-  cfv_status          String?   // 'Normal' | 'Reflux' | 'Obstruction' | 'DVT'
-  femoral_v_status    String?   // 'Normal' | 'Reflux' | 'Obstruction' | 'DVT'
-  popliteal_status    String?   // 'Normal' | 'Reflux' | 'Obstruction' | 'DVT'
+  // Raw clinical signs array (JSON) — stored alongside ceap_c so the
+  // form can re-populate the checkboxes when an existing patient is loaded.
+  // ceap_c remains the authoritative classification; this is the input source.
+  clinical_signs String? // JSON Array e.g. ["Active Ulcer", "Pigmentation"]
 
-  // GSV
-  gsv_diameter Float?
-  gsv_reflux   Boolean @default(false)
-
-  // SSV
-  ssv_diameter Float?
-  ssv_diam_mm  Float?
-  ssv_reflux   Boolean @default(false)
-
-  // Perforators
-  incompetent_perforators Boolean @default(false)
-
-  // Clinical Signs (JSON array string)
-  clinical_signs String?
-
-  // CEAP
-  ceap_c    String?
-  ceap_e    String?
-  ceap_a    String?
-  ceap_p    String?
-  ceap_full String?
-
-  // rVCSS parameters (0–3 each)
+  // --- rVCSS Component Scores (0-3 each) ---
   pain           Int @default(0)
   varicose_veins Int @default(0)
   edema          Int @default(0)
@@ -116,9 +111,11 @@ model Leg {
   ulcer_duration Int @default(0)
   ulcer_size     Int @default(0)
   compression    Int @default(0)
-  rvcss_total    Int @default(0)
 
-  // Local Examination — Ulcer (legacy single-leg fields)
+  // --- Patient-Reported ---
+  pain_vas Float? // 0-10 VAS scale (moved from Assessment.right_pain_vas/left_pain_vas)
+
+  // --- Bedside Ulcer Exam (collapsed from per-side _r/_l duplicates) ---
   ulcer_present  Boolean @default(false)
   ulcer_location String?
   ulcer_size_cm  Float?
@@ -126,53 +123,38 @@ model Leg {
   ulcer_edges    String?
   ulcer_base     String?
 
-  // Ulcer — Right leg specific
-  ulcer_present_r Boolean @default(false)
-  ulcer_location_r String?
-  ulcer_size_r     Float?
-  ulcer_type_r     String?
-  ulcer_edges_r    String?
-  ulcer_base_r     String?
-
-  // Ulcer — Left leg specific
-  ulcer_present_l Boolean @default(false)
-  ulcer_location_l String?
-  ulcer_size_l     Float?
-  ulcer_type_l     String?
-  ulcer_edges_l    String?
-  ulcer_base_l     String?
-
-  // Skin & Swelling
+  // --- Bedside Skin/Swelling ---
   skin_changes   String?
-  swelling_grade String?
+  swelling_grade Int?    // Was String?, now Int? — type normalized
 
-  // Pain VAS
-  pain_vas Int?
+  created_at DateTime @default(now())
 
-  // Etiology (CEAP E component)
-  etiology String?
+  images        Image[]
+  doppler       Doppler[]      // Legacy model — no new writes; kept for historical data
+  dopplerImages DopplerImage[]
 
-  created_at     DateTime       @default(now())
-  images         Image[]
-  doppler        Doppler[]
-  dopplerImages  DopplerImage[]
+  @@unique([assessment_id, leg_side])
 }
 
+// Clinical photograph of the leg (standard photo, not ultrasound)
 model Image {
   id          Int      @id @default(autoincrement())
   leg_id      Int
   leg         Leg      @relation(fields: [leg_id], references: [id], onDelete: Cascade)
   file_path   String
-  view_type   String
-  // New metadata fields
-  phase       String?   // 'clinical' | 'doppler' | 'other'
-  segment     String?   // which vein or view this image belongs to
-  leg_side    String?   // 'right' | 'left'
-  view_label  String?   // human-readable label e.g. 'GSV Mid Thigh Diameter'
-  uploaded_at DateTime  @default(now())
+  view_type   String   // Front | Medial | Lateral | Posterior
+  view_label  String?  // e.g. 'Anterior View', 'Wound Close-Up'
+  uploaded_at DateTime @default(now())
+
+  // NOTE: phase, segment, leg_side removed — those are ultrasound-specific
+  //       and belong on DopplerImage, not here.
 }
 
-// Legacy Doppler model — kept for backwards compatibility
+// ==============================================================
+// Legacy Doppler model — DO NOT write new records to this table.
+// Kept only to preserve historical data. Will be fully removed
+// in a future cleanup migration.
+// ==============================================================
 model Doppler {
   id               Int      @id @default(autoincrement())
   leg_id           Int
@@ -187,30 +169,38 @@ model Doppler {
   uploaded_at      DateTime @default(now())
 }
 
-// New structured DopplerImage model (SOP-compliant, per-phase/segment)
+// ==============================================================
+// AI Data Engine — Each ultrasound image/waveform gets its own row.
+// The 1:1 image-to-label mapping is what machine learning requires.
+// ==============================================================
 model DopplerImage {
-  id               Int      @id @default(autoincrement())
-  leg_id           Int
-  leg              Leg      @relation(fields: [leg_id], references: [id], onDelete: Cascade)
+  id      Int @id @default(autoincrement())
+  leg_id  Int
+  leg     Leg @relation(fields: [leg_id], references: [id], onDelete: Cascade)
 
-  leg_side         String   // 'right' | 'left'
-  phase            String   // 'deep' | 'sfj_gsv' | 'spj_ssv' | 'accessory'
-  segment          String   // e.g. 'cfv', 'gsv_prox_thigh', 'ssv_mid_calf'
-  view_type        String?  // e.g. 'compression', 'spectral', 'color_doppler', 'diameter'
+  // Image Identity
+  phase     String  // 'deep' | 'sfj_gsv' | 'spj_ssv' | 'accessory'
+  segment   String  // e.g. 'cfv', 'popliteal', 'sfj', 'gsv_mid_thigh'
+  view_type String  // 'compression' | 'spectral' | 'diameter' | 'reflux' | 'color_doppler'
 
-  file_path        String?
-  file_name        String?
-  file_ext         String?  // jpg, png, pdf, dcm, frm
+  // File Details
+  file_path String?
+  file_name String?
+  file_ext  String? // jpg, png, pdf, dcm, frm
 
-  // Clinical data per image
-  compressible     Boolean?
+  // AI Training Labels / Doctor Readings
+  vein_status      String?  // Doctor label: Normal | Reflux | Obstruction | DVT
+  compressible     Boolean? // B-Mode compression finding
   spontaneous_flow Boolean?
-  reflux_ms        Float?
+  reflux_ms        Float?   // Waveform reflux duration in ms
   reflux_positive  Boolean?
-  diameter_mm      Float?
+  diameter_mm      Float?   // B-Mode diameter reading
   outward_flow     Boolean?
+  doctor_notes     String?  // Free text annotation
 
-  uploaded_at      DateTime @default(now())
+  uploaded_at DateTime @default(now())
+
+  // NOTE: leg_side removed — already known via leg_id relation.
 }
 
 model AuditLog {
@@ -219,6 +209,7 @@ model AuditLog {
   doctor_name String?
   action      String   // e.g. "VIEW_PATIENT", "CREATE_ASSESSMENT", "DOWNLOAD_DICOM"
   patient_id  String?
+  patient     Patient? @relation(fields: [patient_id], references: [id])
   details     String?  // JSON string of additional context
   timestamp   DateTime @default(now())
 }
