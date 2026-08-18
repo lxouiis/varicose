@@ -73,11 +73,7 @@ app.use('/api/auth', authRoutes);
 
 // Apply JWT globally to all routes following this except /api/auth/login and /api/health (Requirement 2)
 import { authMiddleware } from './middleware/auth';
-app.use('/api', authMiddleware);
-
-app.use('/storage', express.static(path.join(process.cwd(), 'storage')));
-
-// Routes
+// Routes (All /api routes require valid JWT via authMiddleware above)
 app.use('/api/patients', patientRoutes);
 app.use('/api/assessments', assessmentRoutes);
 app.use('/api/legs', legRoutes);

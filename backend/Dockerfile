@@ -38,5 +38,5 @@ RUN mkdir -p /app/storage
 
 EXPOSE 3002
 
-# Run migrations then start server
-CMD ["sh", "-c", "npx prisma db push --skip-generate && node dist/index.js"]
+# Run database migrations/schema deployment then start server
+CMD ["sh", "-c", "npx prisma migrate deploy 2>/dev/null || npx prisma db push --skip-generate && node dist/index.js"]

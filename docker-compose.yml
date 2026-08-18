@@ -1,18 +1,17 @@
 version: '3.9'
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CVI Hospital Registry — Docker Compose (Intranet Deployment)
+# CEVI Hospital Registry — Production Docker Compose Architecture
 #
-# Three containers:
-#   db       → MySQL 8 (data persisted in a named volume)
-#   backend  → Node.js 20 (Prisma ORM, Express API on port 3002)
-#   frontend → Nginx serving React build + proxying /api to backend
+# Services:
+#   db       → MySQL 8 (Isolated internal container, NO host ports)
+#   backend  → Node.js 20 Express API + Prisma ORM (Internal network only)
+#   frontend → Nginx HTTPS reverse proxy (Port 80 HTTP -> Port 443 HTTPS)
 #
-# Usage:
-#   First time:  docker compose up --build -d && docker compose exec backend npm run seed
-#   Updates:     docker compose up --build -d
-#   Logs:        docker compose logs -f backend
-#   Backup:      docker compose exec db mysqldump -u cevi -pCeviHospital@2026! cevi_db > backup.sql
+# Production Security Features:
+#   - Database and Backend ports are NOT exposed to LAN
+#   - /storage is NOT directly exposed; all file access requires JWT authentication
+#   - Credentials read from .env (generated via openssl rand -hex 32)
 # ══════════════════════════════════════════════════════════════════════════════
 
 services:
@@ -23,13 +22,11 @@ services:
     container_name: cevi_db
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword_change_me
-      MYSQL_DATABASE:      cevi_db
-      MYSQL_USER:          cevi
-      MYSQL_PASSWORD:      CeviHospital@2026!
-    # ⚠️  NO 'ports:' mapping — MySQL is intentionally NOT exposed to the host network.
-    # It is ONLY accessible by the backend container on the internal Docker network.
-    # This means even if someone gains LAN access, they cannot connect to MySQL directly.
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword_change_me}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE:-cevi_db}
+      MYSQL_USER:          ${MYSQL_USER:-cevi_app}
+      MYSQL_PASSWORD:      ${MYSQL_PASSWORD:-CeviHospital_2026_SecureKey}
+    # ⚠️ NO host ports mapping — MySQL is strictly isolated to internal Docker network cevi_net
     command: >
       --default-authentication-plugin=mysql_native_password
       --character-set-server=utf8mb4
@@ -38,14 +35,14 @@ services:
     volumes:
       - cevi_mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "cevi", "-pCeviHospital@2026!"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "${MYSQL_USER:-cevi_app}", "-p${MYSQL_PASSWORD:-CeviHospital_2026_SecureKey}"]
       interval: 10s
       timeout: 5s
       retries: 10
     networks:
       - cevi_net
 
-  # ── Backend (Node.js / Express / Prisma) ─────────────────────────────────
+  # ── Backend (Node.js API) ───────────────────────────────────────────────────
   backend:
     build:
       context: ./backend
@@ -53,17 +50,13 @@ services:
     container_name: cevi_backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: "mysql://cevi:CeviHospital@2026!@db:3306/cevi_db"
-      JWT_SECRET:   "cevi-jnmc-hospital-prod-secret-2026-CHANGE-THIS"
-      PORT:         3002
-      NODE_ENV:     production
-      # Add your hospital server IP so CORS allows it.
-      # Replace 192.168.1.100 with your actual server IP.
-      ALLOWED_ORIGINS: "http://192.168.1.100"
-    # ⚠️  NO 'ports:' mapping — backend port 3002 is NOT exposed to the host.
-    # Only Nginx (frontend container) can reach it via the internal Docker network.
+      DATABASE_URL:    "mysql://${MYSQL_USER:-cevi_app}:${MYSQL_PASSWORD:-CeviHospital_2026_SecureKey}@db:3306/${MYSQL_DATABASE:-cevi_db}"
+      JWT_SECRET:      "${JWT_SECRET:-cevi-jnmc-hospital-prod-secret-2026-CHANGE-THIS}"
+      PORT:            3002
+      NODE_ENV:        production
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-https://192.168.1.100,http://192.168.1.100}"
+    # ⚠️ NO host ports mapping — Backend port 3002 is ONLY accessible via Nginx reverse proxy
     volumes:
-      # Uploaded patient images/doppler files persist across container restarts
       - cevi_storage:/app/storage
     depends_on:
       db:
@@ -71,31 +64,34 @@ services:
     networks:
       - cevi_net
 
-  # ── Frontend (Nginx + React build) ───────────────────────────────────────
+  # ── Frontend (Nginx HTTPS Reverse Proxy) ──────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        # Replace 192.168.1.100 with the actual IP of your hospital server
-        VITE_API_URL: "http://192.168.1.100/api"
+        VITE_API_URL: "${VITE_API_URL:-https://192.168.1.100/api}"
     container_name: cevi_frontend
     restart: unless-stopped
     ports:
-      - "80:80"      # Hospital LAN → http://192.168.1.100
+      - "80:80"      # HTTP (Auto-redirects to HTTPS 443)
+      - "443:443"    # HTTPS (TLS 1.2 / 1.3 Encrypted Traffic)
+    volumes:
+      # SSL Certificates directory (Generated via scripts/generate-ssl.sh)
+      - ./nginx/certs:/etc/nginx/certs:ro
     depends_on:
       - backend
     networks:
       - cevi_net
 
-# ── Named Volumes (data persists across container rebuilds) ──────────────────
+# ── Persisted Named Volumes ───────────────────────────────────────────────────
 volumes:
   cevi_mysql_data:
     driver: local
   cevi_storage:
     driver: local
 
-# ── Internal network (containers talk to each other by name) ─────────────────
+# ── Internal Docker Bridge Network ───────────────────────────────────────────
 networks:
   cevi_net:
     driver: bridge
