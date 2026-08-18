@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import dotenv from 'dotenv';
 import path from 'path';
+import rateLimit from 'express-rate-limit';
 
 import authRoutes from './routes/auth';
 import patientRoutes from './routes/patients';
@@ -12,6 +13,7 @@ import imageRoutes from './routes/images';
 import dopplerRoutes from './routes/doppler';
 import dopplerImagesRoutes from './routes/dopplerImages';
 import fileRoutes from './routes/files';
+import { authMiddleware } from './middleware/auth';
 
 // Load env vars
 dotenv.config();
@@ -24,7 +26,16 @@ if (!process.env.JWT_SECRET) {
 }
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
+
+// Rate-limit login to prevent brute-force attacks on doctor accounts
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Please try again in 15 minutes.' },
+});
 
 // Middleware
 app.use(helmet({
@@ -44,10 +55,14 @@ const allowedOrigins = [
 ];
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, server-to-server)
-    if (!origin) return callback(null, true);
+    // In production, always require an Origin header — reject no-origin requests
+    // to prevent server-side tools bypassing the browser CORS policy.
+    if (!origin) {
+      if (process.env.NODE_ENV !== 'production') return callback(null, true);
+      return callback(new Error('CORS: requests without an Origin header are not allowed'));
+    }
     if (allowedOrigins.includes(origin)) return callback(null, true);
-    // Allow any http://192.168.x.x or http://10.x.x.x (RFC-1918 private ranges)
+    // Allow any RFC-1918 private-range origin (hospital intranet)
     if (/^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(origin)) {
       return callback(null, true);
     }
@@ -68,19 +83,17 @@ app.get('/api/health', (req: Request, res: Response) => {
   res.status(200).json({ status: 'ok', project: 'CEVI', timestamp: new Date() });
 });
 
-// Auth Route
-app.use('/api/auth', authRoutes);
+// Auth Route (rate-limited login)
+app.use('/api/auth', loginLimiter, authRoutes);
 
-// Apply JWT globally to all routes following this except /api/auth/login and /api/health (Requirement 2)
-import { authMiddleware } from './middleware/auth';
-// Routes (All /api routes require valid JWT via authMiddleware above)
-app.use('/api/patients', patientRoutes);
-app.use('/api/assessments', assessmentRoutes);
-app.use('/api/legs', legRoutes);
-app.use('/api/images', imageRoutes);
-app.use('/api/doppler', dopplerRoutes);
-app.use('/api/doppler-images', dopplerImagesRoutes);
-app.use('/api/files', fileRoutes);
+// All routes below require a valid JWT — authMiddleware enforces this on every request
+app.use('/api/patients',      authMiddleware, patientRoutes);
+app.use('/api/assessments',   authMiddleware, assessmentRoutes);
+app.use('/api/legs',          authMiddleware, legRoutes);
+app.use('/api/images',        authMiddleware, imageRoutes);
+app.use('/api/doppler',       authMiddleware, dopplerRoutes);
+app.use('/api/doppler-images', authMiddleware, dopplerImagesRoutes);
+app.use('/api/files',         authMiddleware, fileRoutes);
 
 // 404 Catch-All Handler (Requirement 31)
 app.use('*', (req: Request, res: Response) => {

@@ -38,5 +38,7 @@ RUN mkdir -p /app/storage
 
 EXPOSE 3002
 
-# Run database migrations/schema deployment then start server
-CMD ["sh", "-c", "npx prisma migrate deploy 2>/dev/null || npx prisma db push --skip-generate && node dist/index.js"]
+# Deploy pending migrations (safe for production — never mutates existing data).
+# If the migration fails the container exits immediately rather than starting
+# with a mismatched schema.  Do NOT fall back to `db push` in production.
+CMD ["sh", "-c", "npx prisma migrate deploy && node dist/index.js"]

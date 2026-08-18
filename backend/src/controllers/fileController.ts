@@ -65,9 +65,11 @@ export async function getFile(req: Request, res: Response): Promise<void> {
       ? filePath
       : path.join(process.cwd(), filePath);
 
-    // Prevent path traversal attack
+    // Prevent path traversal: require the resolved path to be strictly inside
+    // storageRoot. The trailing sep prevents /app/storage2/... from matching
+    // /app/storage as a prefix.
     const normalizedPath = path.normalize(absolutePath);
-    if (!normalizedPath.startsWith(storageRoot)) {
+    if (!normalizedPath.startsWith(storageRoot + path.sep)) {
       res.status(403).json({ error: 'Access denied: Path outside storage root' });
       return;
     }
