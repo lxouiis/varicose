@@ -55,12 +55,11 @@ const allowedOrigins = [
 ];
 app.use(cors({
   origin: (origin, callback) => {
-    // In production, always require an Origin header — reject no-origin requests
-    // to prevent server-side tools bypassing the browser CORS policy.
-    if (!origin) {
-      if (process.env.NODE_ENV !== 'production') return callback(null, true);
-      return callback(new Error('CORS: requests without an Origin header are not allowed'));
-    }
+    // Allow requests with no Origin header — same-origin browser GET requests
+    // (frontend and API share one domain behind Nginx) never send this header,
+    // and this API authenticates via JWT Bearer token (not cookies), so there
+    // is no CSRF exposure that would require blocking no-origin requests.
+    if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     // Allow any RFC-1918 private-range origin (hospital intranet)
     if (/^https?:\/\/(192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.)/.test(origin)) {
