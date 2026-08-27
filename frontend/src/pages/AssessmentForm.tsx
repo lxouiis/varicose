@@ -480,7 +480,7 @@ export function AssessmentForm() {
 
         // Fetch latest patient record to sync Zustand store
         try {
-          const res = await api.get(`/patients/${finalPatientId}`);
+          await api.get(`/patients/${finalPatientId}`);
           // The store expects mapped data or just triggers fetchPatients/fetchAssessments.
           // Wait, fetchAssessments handles mapping and saving to store.
           await useStore.getState().fetchAssessments(finalPatientId!);
@@ -825,16 +825,14 @@ export function AssessmentForm() {
                   cf: rightCommonFemoral, setCf: setRightCommonFemoral,
                   sf: rightSuperficialFemoral, setSf: setRightSuperficialFemoral,
                   pv: rightPoplitealStatus, setPv: setRightPoplitealStatus,
-                  etiology: rightEtiology, setEtiology: setRightEtiology,
                 },
                 {
                   isRight: false, leg: leftLeg, ceap: computedLeftCeap,
                   cf: leftCommonFemoral, setCf: setLeftCommonFemoral,
                   sf: leftSuperficialFemoral, setSf: setLeftSuperficialFemoral,
                   pv: leftPoplitealStatus, setPv: setLeftPoplitealStatus,
-                  etiology: leftEtiology, setEtiology: setLeftEtiology,
                 },
-              ].map(({ isRight, leg, ceap, cf, setCf, sf, setSf, pv, setPv, etiology, setEtiology }) => (
+              ].map(({ isRight, leg, ceap, cf, setCf, sf, setSf, pv, setPv }) => (
                 <div key={isRight?"R":"L"} className="space-y-6 p-4 bg-slate-50/50 rounded-lg border">
                   <div className="flex items-center justify-between border-b pb-2">
                     <h3 className="font-semibold text-lg text-slate-800">{isRight?"Right":"Left"} Leg</h3>

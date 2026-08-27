@@ -2,7 +2,7 @@ import { useRef, useEffect, useState, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useStore, type LegExam } from "@/store/useStore";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Download, Printer, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { ArrowLeft, Download, Printer } from "lucide-react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from "recharts";
@@ -477,7 +477,7 @@ export function AssessmentReportPage() {
                           <XAxis type="number" domain={[0, 6]} tickCount={7} tick={{ fontSize: 11 }} />
                           <YAxis dataKey="param" type="category" tick={{ fill: '#475569', fontSize: 11 }} width={110} />
                           <RechartsTooltip
-                            formatter={(value: number, name: string) => [ 
+                            formatter={(value, name) => [
                               value,
                               name === 'prev' ? 'Previous Visit' : 'Current Visit'
                             ]}
