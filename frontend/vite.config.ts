@@ -4,7 +4,9 @@ import path from 'path'
 
 // https://vite.dev/config/
 export default defineConfig({
-  base: '/Varicose-veins-classification/',
+  // '/' — the app is served from the domain root by Nginx on the hospital
+  // server, not from a GitHub Pages subpath.
+  base: '/',
   plugins: [react()],
   resolve: {
     alias: {
