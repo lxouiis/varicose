@@ -10,26 +10,18 @@ import { ArrowLeft, UserPlus } from "lucide-react";
 export function NewPatient() {
   const navigate = useNavigate();
   const addPatient = useStore((state) => state.addPatient);
-  const patients = useStore((state) => state.patients);
 
   const [name, setName] = useState("");
-  const [uhid, setUhid] = useState("");
   const [age, setAge] = useState("");
   const [gender, setGender] = useState<Gender>("Male");
-  
-  const [errors, setErrors] = useState<{ name?: string; uhid?: string }>({});
+
+  const [errors, setErrors] = useState<{ name?: string; general?: string }>({});
 
   const validate = () => {
-    const newErrors: { name?: string; uhid?: string } = {};
-    
+    const newErrors: { name?: string } = {};
+
     if (!name.trim()) {
       newErrors.name = "Patient Name is required";
-    }
-    
-    if (!uhid.trim()) {
-      newErrors.uhid = "UHID is required";
-    } else if (patients.some(p => p.uhid.toLowerCase() === uhid.trim().toLowerCase())) {
-      newErrors.uhid = "This UHID is already registered";
     }
 
     setErrors(newErrors);
@@ -38,21 +30,26 @@ export function NewPatient() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validate()) return;
 
-    const patientId = await addPatient({
-      patientName: name.trim(),
-      uhid: uhid.trim(),
-      age: parseInt(age) || 0,
-      gender,
-      createdAt: new Date().toISOString()
-    });
+    // UHID is generated automatically by the server — no manual entry, so two
+    // doctors registering patients at the same moment can never collide.
+    try {
+      const patientId = await addPatient({
+        patientName: name.trim(),
+        age: parseInt(age) || 0,
+        gender,
+        createdAt: new Date().toISOString()
+      });
 
-    if (patientId) {
-      navigate(`/assessment/new/${patientId}`);
-    } else {
-      setErrors({ uhid: "Failed to register patient. UHID might already exist." });
+      if (patientId) {
+        navigate(`/assessment/new/${patientId}`);
+      } else {
+        setErrors({ general: "Failed to register patient. Please try again." });
+      }
+    } catch (err: any) {
+      setErrors({ general: err.message || "Failed to register patient. Please try again." });
     }
   };
 
@@ -88,17 +85,9 @@ export function NewPatient() {
                 {errors.name && <p className="text-sm text-destructive font-medium">{errors.name}</p>}
               </div>
               
-              <div className="space-y-2">
-                <Label htmlFor="uhid">UHID <span className="text-destructive">*</span></Label>
-                <Input 
-                  id="uhid"
-                  value={uhid} 
-                  onChange={e => { setUhid(e.target.value); if (errors.uhid) setErrors({...errors, uhid: undefined}); }} 
-                  placeholder="e.g. UHID-123456" 
-                  className={errors.uhid ? "border-destructive focus-visible:ring-destructive" : ""}
-                />
-                {errors.uhid && <p className="text-sm text-destructive font-medium">{errors.uhid}</p>}
-              </div>
+              <p className="text-sm text-muted-foreground -mt-2">
+                UHID will be assigned automatically once you register the patient.
+              </p>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -129,6 +118,10 @@ export function NewPatient() {
                 </div>
               </div>
             </div>
+
+            {errors.general && (
+              <p className="text-sm text-destructive font-medium">{errors.general}</p>
+            )}
 
             <div className="pt-4 border-t flex flex-col-reverse sm:flex-row justify-end gap-3 mt-8">
               <Button type="button" variant="outline" onClick={() => navigate("/")}>

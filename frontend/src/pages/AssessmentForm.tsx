@@ -55,7 +55,6 @@ export function AssessmentForm() {
   const addAssessment   = useStore(s => s.addAssessment);
   const addPatient      = useStore(s => s.addPatient);
   const updatePatient   = useStore(s => s.updatePatient);
-  const isUhidTaken     = useStore(s => s.isUhidTaken);
   const fetchAssessments = useStore(s => s.fetchAssessments);
   const existingPatient = patientId && patientId !== "new" ? getPatientById(patientId) : null;
   const latestAssessment = existingPatient 
@@ -68,7 +67,9 @@ export function AssessmentForm() {
 
   // ── Patient basics ─────────────────
   const [patientName, setPatientName] = useState(existingPatient?.patientName || "");
-  const [uhid, setUhid]               = useState(existingPatient?.uhid || "");
+  // UHID is server-generated (see backend/src/utils/uhid.ts) — read-only here,
+  // it only ever reflects an existing patient's already-assigned value.
+  const [uhid]                        = useState(existingPatient?.uhid || "");
   const [age, setAge]                 = useState(existingPatient?.age?.toString() || "");
   const [gender, setGender]           = useState<"Male"|"Female"|"Other">(existingPatient?.gender || "Male");
 
@@ -264,18 +265,14 @@ export function AssessmentForm() {
     setIsSaving(true);
     let finalPatientId: string | null | undefined = patientId;
     if (!existingPatient || patientId === "new") {
-      // Guard: check duplicate UHID before creating patient
-      if (uhid.trim() && isUhidTaken(uhid.trim())) {
-        setUhidError("A patient with this UHID already exists");
-        return;
-      }
+      // UHID is generated automatically by the server on save — no manual
+      // entry, so no client-side duplicate check is needed here.
       try {
         // v2: addPatient only receives STATIC DEMOGRAPHIC fields.
         // Per-visit fields (comorbidities, medications, venousHistory, clinicalNotes,
         // veinesNotes, bp, pulse, painVas) go to addAssessment() below.
         const newId = await addPatient({
           patientName: patientName.trim(),
-          uhid: uhid.trim(),
           age: parseInt(age) || 0,
           gender,
           height: parseFloat(height) || undefined,
@@ -544,7 +541,11 @@ export function AssessmentForm() {
               <div className="space-y-2"><Label>Patient Name</Label><Input value={patientName} onChange={e=>setPatientName(e.target.value)} placeholder="John Doe" /></div>
               <div className="space-y-2">
                 <Label>UHID</Label>
-                <Input value={uhid} onChange={e=>{setUhid(e.target.value); if(uhidError) setUhidError("");}} placeholder="UHID-1234" className={uhidError ? "border-red-500 focus-visible:ring-red-500" : ""} />
+                {existingPatient ? (
+                  <Input value={uhid} disabled readOnly />
+                ) : (
+                  <Input value="Assigned automatically on save" disabled readOnly className="text-muted-foreground italic" />
+                )}
                 {uhidError && <p className="text-sm text-red-600 font-medium">{uhidError}</p>}
               </div>
               <div className="space-y-2"><Label>Age</Label><Input type="number" value={age} onChange={e=>setAge(e.target.value)} placeholder="45" /></div>

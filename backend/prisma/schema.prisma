@@ -203,6 +203,18 @@ model DopplerImage {
   // NOTE: leg_side removed — already known via leg_id relation.
 }
 
+// ==============================================================
+// UHID Sequence — a dedicated auto-increment-only table used purely
+// to hand out globally unique, strictly increasing numbers. MySQL's
+// AUTO_INCREMENT counter is thread-safe internally, so two doctors
+// registering patients at the exact same instant are guaranteed to
+// receive two different numbers — no race condition, no manual entry,
+// no possibility of duplicate UHIDs.
+// ==============================================================
+model UhidSequence {
+  id Int @id @default(autoincrement())
+}
+
 model AuditLog {
   id          Int      @id @default(autoincrement())
   doctor_id   Int?

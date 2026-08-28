@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { formatCeapFull } from '../utils/ceap';
 import { calculateRvcss } from '../utils/rvcss';
 import { logAudit } from '../utils/audit';
+import { generateNextUhid } from '../utils/uhid';
 
 import { prisma } from '../lib/prisma';
 
@@ -119,20 +120,17 @@ export async function createPatient(req: Request, res: Response): Promise<void> 
 
     // NOTE: comorbidities, medications, venous_history, clinical_notes, veines_notes,
     // r_pain_vas, l_pain_vas are no longer stored on Patient. They belong to Assessment.
+    // NOTE: uhid is intentionally NOT read from req.body — it is always generated
+    // server-side via generateNextUhid() so two doctors registering patients at
+    // the same instant can never collide on the same UHID.
     const {
-      name, uhid, age, sex, height, weight, bmi,
+      name, age, sex, height, weight, bmi,
       race, smoking, occupation, parity,
       dvt_history, clinic, doctor_notes,
     } = req.body;
 
-    if (!name || !uhid || !age || !sex) {
-      res.status(400).json({ error: 'Name, UHID, age, and sex are required' });
-      return;
-    }
-
-    const existing = await prisma.patient.findUnique({ where: { uhid } });
-    if (existing) {
-      res.status(409).json({ error: 'A patient with this UHID already exists' });
+    if (!name || !age || !sex) {
+      res.status(400).json({ error: 'Name, age, and sex are required' });
       return;
     }
 
@@ -142,24 +140,41 @@ export async function createPatient(req: Request, res: Response): Promise<void> 
       ? parseFloat(bmi) || null
       : (h && w && h > 0 ? parseFloat((w / ((h / 100) ** 2)).toFixed(1)) : null);
 
-    const patient = await prisma.patient.create({
-      data: {
-        name,
-        uhid,
-        age:         parseInt(age),
-        sex,
-        height:      h,
-        weight:      w,
-        bmi:         parsedBmi,
-        race:        race       || null,
-        smoking:     smoking    ? (typeof smoking    === 'string' ? smoking    : JSON.stringify(smoking))    : null,
-        occupation:  occupation ? (typeof occupation === 'string' ? occupation : JSON.stringify(occupation)) : null,
-        parity:      parity     ? parseInt(parity)   : null,
-        dvt_history: dvt_history === true || dvt_history === 'true',
-        clinic:      clinic      || null,
-        doctor_notes: doctor_notes || null,
-      },
-    });
+    const patientData = {
+      name,
+      age:         parseInt(age),
+      sex,
+      height:      h,
+      weight:      w,
+      bmi:         parsedBmi,
+      race:        race       || null,
+      smoking:     smoking    ? (typeof smoking    === 'string' ? smoking    : JSON.stringify(smoking))    : null,
+      occupation:  occupation ? (typeof occupation === 'string' ? occupation : JSON.stringify(occupation)) : null,
+      parity:      parity     ? parseInt(parity)   : null,
+      dvt_history: dvt_history === true || dvt_history === 'true',
+      clinic:      clinic      || null,
+      doctor_notes: doctor_notes || null,
+    };
+
+    // Retry loop guards against the extremely unlikely case where a generated
+    // UHID collides with one entered manually before this auto-generation was
+    // introduced (e.g. leftover test data). Each retry pulls a fresh sequence
+    // number, so this always converges.
+    let patient;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const uhid = await generateNextUhid();
+      try {
+        patient = await prisma.patient.create({ data: { ...patientData, uhid } });
+        break;
+      } catch (err: any) {
+        if (err.code === 'P2002' && attempt < 4) continue; // uhid collision — retry
+        throw err;
+      }
+    }
+    if (!patient) {
+      res.status(500).json({ error: 'Failed to generate a unique UHID after multiple attempts' });
+      return;
+    }
 
     logAudit({
       doctorId:   req.user?.id,

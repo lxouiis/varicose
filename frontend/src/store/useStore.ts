@@ -263,9 +263,10 @@ export const useStore = create<CeviState>()(
           // v2: Only send static demographic fields to Patient.
           // Per-visit fields (comorbidities, medications, venous_history, etc.)
           // must be sent with addAssessment(), NOT here.
+          // NOTE: uhid is NOT sent — the server always generates it (see
+          // backend/src/utils/uhid.ts) so concurrent registrations can never collide.
           const payload = {
             name:       patient.patientName,
-            uhid:       patient.uhid,
             age:        patient.age,
             sex:        patient.gender,
             height:     patient.height,
