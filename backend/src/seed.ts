@@ -23,6 +23,37 @@ async function main() {
   });
   console.log('Upserted doctor dr.irannahittalmani@jnmc.edu (role: Admin)');
 
+  // A couple of non-admin doctor accounts, matching this deployment's real
+  // role values, for local testing of the forced-reset flow. Left with
+  // must_reset_password: true (the default) and the shared default
+  // password '12345678' — this mirrors the real hospital DB's current
+  // state (every account still on that default) so you can log in as one
+  // of these locally and see the forced "Set a New Password" screen, or
+  // reset one from the Admin panel to see a temp password generated.
+  const defaultPassword = await bcrypt.hash('12345678', 10);
+  await prisma.doctor.upsert({
+    where: { email: 'dr.hod@jnmc.edu' },
+    update: {},
+    create: {
+      email: 'dr.hod@jnmc.edu',
+      password: defaultPassword,
+      name: 'Dr. Professor HOD',
+      role: 'Professor & HOD',
+      // must_reset_password defaults to true — left unset deliberately
+    },
+  });
+  await prisma.doctor.upsert({
+    where: { email: 'dr.associate@jnmc.edu' },
+    update: {},
+    create: {
+      email: 'dr.associate@jnmc.edu',
+      password: defaultPassword,
+      name: 'Dr. Associate Professor',
+      role: 'Asso. Professor',
+    },
+  });
+  console.log('Upserted doctors dr.hod@jnmc.edu and dr.associate@jnmc.edu (password: 12345678, reset required)');
+
   // Patient 1 — purely static demographics
   const p1 = await prisma.patient.upsert({
     where: { uhid: 'UHID-1001' },
