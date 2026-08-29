@@ -354,7 +354,10 @@ export function VenousDiagram({ images }: VenousDiagramProps) {
       )}
 
       {/* Diagrams */}
-      <div className="grid grid-cols-2 gap-12 max-w-3xl mx-auto">
+      {/* data-pdf-avoid-break: keep this whole block (both leg diagrams + coverage
+          badges) together so PDF export never slices it mid-diagram across a page
+          boundary — see handleDownload in Report.tsx. */}
+      <div data-pdf-avoid-break className="grid grid-cols-2 gap-12 max-w-3xl mx-auto">
         {(["right", "left"] as const).map((leg) => (
           <div key={leg} className="flex flex-col items-center space-y-4">
             <h4 className="font-bold text-lg text-slate-800 capitalize">{leg} Leg Anatomy</h4>
@@ -374,7 +377,7 @@ export function VenousDiagram({ images }: VenousDiagramProps) {
       </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center justify-center gap-6 py-4 border-t border-b border-slate-200 bg-slate-50 rounded-lg mt-6">
+      <div data-pdf-avoid-break className="flex flex-wrap items-center justify-center gap-6 py-4 border-t border-b border-slate-200 bg-slate-50 rounded-lg mt-6">
         {[
           { fill: "#1a6b5c", stroke: "#1a6b5c", label: "Image + Data complete" },
           { fill: "#ffffff", stroke: "#1a6b5c", label: "Data only (no image)" },
@@ -393,7 +396,7 @@ export function VenousDiagram({ images }: VenousDiagramProps) {
       {/* Findings tables */}
       <div className="grid md:grid-cols-2 gap-8 mt-8">
         {(["right", "left"] as const).map((leg) => (
-          <div key={leg} className="bg-white rounded-lg border shadow-sm overflow-hidden">
+          <div key={leg} data-pdf-avoid-break className="bg-white rounded-lg border shadow-sm overflow-hidden">
             <div className="bg-slate-800 px-4 py-2">
               <h4 className="text-sm font-bold text-white capitalize">
                 {leg} Leg — Doppler Findings
