@@ -12,14 +12,20 @@ datasource db {
 // ==============================================================
 
 model Doctor {
-  id          Int          @id @default(autoincrement())
-  email       String       @unique
-  password    String
-  name        String
-  role        String       @default("radiologist")
-  created_at  DateTime     @default(now())
-  updated_at  DateTime     @updatedAt
-  assessments Assessment[]
+  id                   Int          @id @default(autoincrement())
+  email                String       @unique
+  password             String
+  name                 String
+  role                 String       @default("radiologist")
+  // Forces a password change before any other action — true for every newly
+  // created account (see default below) and set true again whenever an admin
+  // resets a forgotten password. Cleared only by a successful self-service
+  // password change. Enforced server-side in middleware/requirePasswordSet.ts,
+  // not just as a UI redirect.
+  must_reset_password  Boolean      @default(true)
+  created_at           DateTime     @default(now())
+  updated_at           DateTime     @updatedAt
+  assessments          Assessment[]
 }
 
 model Patient {

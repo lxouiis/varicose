@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { login } from '../controllers/authController';
+import { login, changePassword } from '../controllers/authController';
+import { authMiddleware } from '../middleware/auth';
 import rateLimit from 'express-rate-limit';
 
 const router = Router();
@@ -13,5 +14,12 @@ const loginLimiter = rateLimit({
 });
 
 router.post('/login', loginLimiter, login);
+
+// Authenticated but deliberately NOT behind requirePasswordSet (see
+// index.ts) — this is the one route a must-reset doctor needs to reach to
+// get past the forced-reset gate. Still covered by the /api/auth-wide
+// loginLimiter mounted in index.ts, which also throttles guesses at a
+// doctor's current password here.
+router.post('/change-password', authMiddleware, changePassword);
 
 export default router;

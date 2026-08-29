@@ -3,19 +3,25 @@ import bcrypt from 'bcrypt';
 import { prisma } from './lib/prisma';
 
 async function main() {
-  // Create Doctor idempotently
+  // Create Doctor idempotently — local/dev seed only, NOT the production
+  // account. role: 'Admin' matches this deployment's real role values
+  // ('Admin', 'Professor & HOD', 'Asso. Professor'), so this seeded account
+  // can immediately exercise the admin panel in local testing.
+  // must_reset_password: false since 'jnmc2026' is a real chosen dev
+  // password, not a temporary one — leave it able to log straight in.
   const password = await bcrypt.hash('jnmc2026', 10);
   const doctor = await prisma.doctor.upsert({
-    where: { email: 'dr.iranna@jnmc.edu' },
-    update: { password },
+    where: { email: 'dr.irannahittalmani@jnmc.edu' },
+    update: { password, role: 'Admin', must_reset_password: false },
     create: {
-      email: 'dr.iranna@jnmc.edu',
+      email: 'dr.irannahittalmani@jnmc.edu',
       password,
       name: 'Dr. Iranna M Hittalamani',
-      role: 'interventional_radiologist',
+      role: 'Admin',
+      must_reset_password: false,
     },
   });
-  console.log('Upserted doctor dr.iranna@jnmc.edu');
+  console.log('Upserted doctor dr.irannahittalmani@jnmc.edu (role: Admin)');
 
   // Patient 1 — purely static demographics
   const p1 = await prisma.patient.upsert({
@@ -128,7 +134,7 @@ async function main() {
   });
 
   console.log('Seeded 3 demo patients with normalized CEAP/rVCSS data (v2 schema).');
-  console.log('Seeding complete. Use dr.iranna@jnmc.edu / jnmc2026 to log in.');
+  console.log('Seeding complete. Use dr.irannahittalmani@jnmc.edu / jnmc2026 to log in.');
 }
 
 main()

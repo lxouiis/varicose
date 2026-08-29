@@ -23,6 +23,19 @@ api.interceptors.response.use(
       useStore.getState().logout();
       alert('Session expired, please login again.');
       window.location.hash = '#/login';
+    } else if (error.response?.data?.code === 'PASSWORD_RESET_REQUIRED') {
+      // The server is the source of truth here, not the locally-cached
+      // currentUser.mustResetPassword flag — this can fire even if that
+      // flag is stale (e.g. an admin reset this doctor's password from
+      // another session while this tab was already open). Sync the local
+      // flag and force the redirect regardless of what page triggered it.
+      const currentUser = useStore.getState().currentUser;
+      if (currentUser) {
+        useStore.setState({ currentUser: { ...currentUser, mustResetPassword: true } });
+      }
+      if (window.location.hash !== '#/reset-password') {
+        window.location.hash = '#/reset-password';
+      }
     }
     return Promise.reject(error);
   }

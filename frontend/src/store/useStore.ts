@@ -189,6 +189,16 @@ export interface AuthUser {
   email: string;
   name: string;
   role: string;
+  mustResetPassword: boolean;
+}
+
+export interface DoctorAccount {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  mustResetPassword: boolean;
+  createdAt: string;
 }
 
 interface CeviState {
@@ -197,10 +207,16 @@ interface CeviState {
   token: string | null;
   currentUser: AuthUser | null;
   isAuthenticated: boolean;
+  doctors: DoctorAccount[];
 
   // Auth
   login: (email: string, pass: string) => Promise<boolean>;
   logout: () => void;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
+
+  // Admin
+  fetchDoctors: () => Promise<void>;
+  resetDoctorPassword: (doctorId: number) => Promise<{ tempPassword: string } | { error: string }>;
 
   // API Actions
   fetchPatients: () => Promise<void>;
@@ -227,12 +243,13 @@ export const useStore = create<CeviState>()(
       isAuthenticated: false,
       currentUser: null,
       token: null,
+      doctors: [],
 
       login: async (email, password) => {
         try {
           const res = await api.post('/auth/login', { email, password });
-          const { token, user } = res.data;
-          set({ isAuthenticated: true, currentUser: user, token });
+          const { token, user, mustResetPassword } = res.data;
+          set({ isAuthenticated: true, currentUser: { ...user, mustResetPassword }, token });
           return true;
         } catch (error) {
           console.error('Login failed:', error);
@@ -246,7 +263,43 @@ export const useStore = create<CeviState>()(
         token: null,
         patients: [],
         assessments: [],
+        doctors: [],
       }),
+
+      changePassword: async (currentPassword, newPassword) => {
+        try {
+          await api.post('/auth/change-password', { currentPassword, newPassword });
+          // The password is now set — clear the forced-reset flag so Layout
+          // stops redirecting to /reset-password.
+          set(state => ({
+            currentUser: state.currentUser ? { ...state.currentUser, mustResetPassword: false } : null,
+          }));
+          return { success: true };
+        } catch (error: any) {
+          return { success: false, error: error?.response?.data?.error || 'Failed to change password' };
+        }
+      },
+
+      fetchDoctors: async () => {
+        try {
+          const res = await api.get('/admin/doctors');
+          set({ doctors: res.data });
+        } catch (error) {
+          console.error('Fetch doctors failed:', error);
+        }
+      },
+
+      resetDoctorPassword: async (doctorId) => {
+        try {
+          const res = await api.post(`/admin/doctors/${doctorId}/reset-password`);
+          // Refresh the list so the "reset required" status shown for this
+          // doctor updates immediately.
+          await get().fetchDoctors();
+          return { tempPassword: res.data.tempPassword };
+        } catch (error: any) {
+          return { error: error?.response?.data?.error || 'Failed to reset password' };
+        }
+      },
 
       fetchPatients: async () => {
         try {
