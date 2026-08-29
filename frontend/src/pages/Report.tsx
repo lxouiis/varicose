@@ -243,6 +243,12 @@ export function AssessmentReportPage() {
   };
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
+  // Elements that must never be sliced across a PDF page boundary. Every <tr> is
+  // included automatically (table rows), plus anything explicitly opted in via
+  // data-pdf-avoid-break (e.g. the leg-anatomy diagram pair, the legend, each
+  // findings-table card) — see venous-diagram.tsx.
+  const AVOID_BREAK_SELECTOR = 'tr, [data-pdf-avoid-break]';
+
   const handleDownload = async () => {
     if (!reportRef.current) return;
     const previousScrollY = window.scrollY;
@@ -252,51 +258,115 @@ export function AssessmentReportPage() {
       // Let charts render completely and layout update
       await new Promise(r => setTimeout(r, 500));
 
+      const reportEl = reportRef.current;
       const pdf = new jsPDF("p", "mm", "a4");
-      const pages = reportRef.current.querySelectorAll('.pdf-page');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeightMm = pdf.internal.pageSize.getHeight();
 
-      if (pages.length > 0) {
-        for (let i = 0; i < pages.length; i++) {
-          const page = pages[i] as HTMLElement;
-          // Scroll the element into view so html2canvas doesn't clip offscreen parts
-          window.scrollTo(0, page.offsetTop);
-          
-          const canvas = await html2canvas(page, { 
-            scale: 2, 
-            useCORS: true, 
-            logging: false
-          });
-          const imgData = canvas.toDataURL("image/jpeg", 0.7);
-          
-          const pdfWidth = pdf.internal.pageSize.getWidth();
-          const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+      // One single capture of the whole report. (The previous approach called
+      // html2canvas once per `.pdf-page` element, scrolling the window into
+      // place before each call. Besides the scroll race, capturing overlapping
+      // elements as separate html2canvas calls is inherently unreliable —
+      // html2canvas clones the live document per call and isn't guaranteed to
+      // clip precisely to the target element's own box, so a section could be
+      // pulled into more than one capture. A single capture of the container
+      // has no such ambiguity; everything below is pure geometry on one canvas.)
+      const canvas = await html2canvas(reportEl, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        scrollX: 0,
+        scrollY: 0,
+      });
 
-          if (i > 0) pdf.addPage();
-          pdf.addImage(imgData, "JPEG", 0, 0, pdfWidth, imgHeight);
-        }
-      } else {
-        const canvas = await html2canvas(reportRef.current, { 
-          scale: 2, 
-          useCORS: true, 
-          logging: false
+      // html2canvas's `scale` option is the ratio of canvas pixels to CSS
+      // pixels — derive it from the actual output rather than assuming it
+      // matches the `scale: 2` passed in, since fonts/scrollbars can nudge
+      // offsetWidth by a pixel or two.
+      const cssPxToCanvasPx = canvas.width / reportEl.offsetWidth;
+      // Separately, canvas pixels -> mm on the page (the image is stretched to
+      // fill pdfWidth, so this is a different ratio from the one above).
+      const canvasPxToMm = pdfWidth / canvas.width;
+
+      const reportRect = reportEl.getBoundingClientRect();
+      const toCanvasPx = (cssPx: number) => cssPx * cssPxToCanvasPx;
+
+      // Hard breaks: the top of every `.pdf-page` element always starts a new
+      // PDF page (matches the template's PAGE 1/2/3 grouping), in canvas-px
+      // coordinates relative to the captured canvas.
+      const pageEls = Array.from(reportEl.querySelectorAll<HTMLElement>('.pdf-page'));
+      // Skip the first `.pdf-page` by index (not by a small pixel threshold —
+      // a 1-2px border/rounded-corner offset between reportEl and the first
+      // `.pdf-page` could otherwise slip through and produce a near-blank
+      // leading page).
+      const hardBreaksPx = pageEls
+        .slice(1)
+        .map(el => toCanvasPx(el.getBoundingClientRect().top - reportRect.top));
+
+      // Soft constraint: elements that must never be sliced across a page
+      // boundary — every <tr> (table rows) plus anything opted in via
+      // data-pdf-avoid-break (leg-anatomy diagrams, legend, findings cards).
+      const avoidBreakRectsPx = Array.from(reportEl.querySelectorAll<HTMLElement>(AVOID_BREAK_SELECTOR))
+        .map(el => {
+          const r = el.getBoundingClientRect();
+          return {
+            top: toCanvasPx(r.top - reportRect.top),
+            bottom: toCanvasPx(r.bottom - reportRect.top),
+          };
         });
-        const imgData = canvas.toDataURL("image/jpeg", 0.7);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
-        const imgHeight = (canvas.height * pdfWidth) / canvas.width;
 
-        let heightLeft = imgHeight;
-        let position = 0;
+      const pdfPageHeightPx = pdfHeightMm / canvasPxToMm;
+      const canvasHeightPx = canvas.height;
 
-        pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, imgHeight);
-        heightLeft -= pageHeight;
+      let isFirstPdfPage = true;
+      let sliceTopPx = 0;
 
-        while (heightLeft > 0) {
-          position -= pageHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, "JPEG", 0, position, pdfWidth, imgHeight);
-          heightLeft -= pageHeight;
+      while (sliceTopPx < canvasHeightPx - 1) {
+        let sliceBottomPx = Math.min(sliceTopPx + pdfPageHeightPx, canvasHeightPx);
+
+        // Never let a slice cross into the next `.pdf-page` section.
+        const nextHardBreak = hardBreaksPx.find(b => b > sliceTopPx + 1 && b < sliceBottomPx);
+        if (nextHardBreak !== undefined) {
+          sliceBottomPx = nextHardBreak;
+        } else if (sliceBottomPx < canvasHeightPx) {
+          // Otherwise, don't cut through a protected element — pull the
+          // boundary back to just before it so it moves to the next page
+          // whole, unless that single element is itself taller than one page
+          // (then cutting through it is unavoidable; fall back to the plain
+          // page-height cut rather than emitting near-empty pages).
+          const straddling = avoidBreakRectsPx.filter(
+            b => b.top < sliceBottomPx && b.bottom > sliceBottomPx
+          );
+          if (straddling.length > 0) {
+            const pulledBackTop = Math.min(...straddling.map(b => b.top));
+            if (pulledBackTop > sliceTopPx + pdfPageHeightPx * 0.15) {
+              sliceBottomPx = pulledBackTop;
+            }
+          }
         }
+
+        const sliceHeightPx = sliceBottomPx - sliceTopPx;
+        if (sliceHeightPx <= 0) break;
+
+        const sliceCanvas = document.createElement('canvas');
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = sliceHeightPx;
+        const ctx = sliceCanvas.getContext('2d');
+        if (!ctx) break;
+        ctx.drawImage(
+          canvas,
+          0, sliceTopPx, canvas.width, sliceHeightPx,
+          0, 0, canvas.width, sliceHeightPx
+        );
+
+        const imgData = sliceCanvas.toDataURL('image/jpeg', 0.7);
+        const imgHeightMm = sliceHeightPx * canvasPxToMm;
+
+        if (!isFirstPdfPage) pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, imgHeightMm);
+        isFirstPdfPage = false;
+
+        sliceTopPx = sliceBottomPx;
       }
 
       pdf.save(`CEVI_Report_${patient.patientName.replace(/\s+/g, '_')}_${assessment.assessmentDate}.pdf`);
@@ -326,7 +396,13 @@ export function AssessmentReportPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20">
-      <div className="flex items-center justify-between">
+      {/* print:hidden — this is page chrome (back button, title, action buttons),
+          not report content. window.print() prints the whole page, so without
+          this it shows up above the actual report in both the print preview
+          and any "print to PDF" output. The "Download PDF" button's own
+          html2canvas capture is scoped to reportRef below, which already
+          excludes this row — see handleDownload. */}
+      <div className="flex items-center justify-between print:hidden">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
             <ArrowLeft className="h-5 w-5" />
