@@ -210,7 +210,7 @@ interface CeviState {
   doctors: DoctorAccount[];
 
   // Auth
-  login: (email: string, pass: string) => Promise<boolean>;
+  login: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   changePassword: (currentPassword: string, newPassword: string) => Promise<{ success: boolean; error?: string }>;
 
@@ -250,10 +250,29 @@ export const useStore = create<CeviState>()(
           const res = await api.post('/auth/login', { email, password });
           const { token, user, mustResetPassword } = res.data;
           set({ isAuthenticated: true, currentUser: { ...user, mustResetPassword }, token });
-          return true;
-        } catch (error) {
+          return { success: true };
+        } catch (error: any) {
           console.error('Login failed:', error);
-          return false;
+          // Surface what actually went wrong instead of a one-size-fits-all
+          // message — "can't reach the server" and "wrong password" need
+          // very different fixes, and hiding that distinction is what made
+          // this hard to diagnose.
+          let message: string;
+          if (error?.response?.data?.error) {
+            // A real response from the server — its message (e.g. "Invalid
+            // email or password", or the rate limiter's message) is already
+            // client-safe.
+            message = error.response.data.error;
+          } else if (error?.request) {
+            // Request went out but no response came back at all — the
+            // backend isn't reachable at the configured API URL (not
+            // running, wrong port, CORS blocked it, etc.), not a bad
+            // password.
+            message = `Can't reach the server at ${api.defaults.baseURL}. Is the backend running?`;
+          } else {
+            message = 'Unexpected error while logging in.';
+          }
+          return { success: false, error: message };
         }
       },
 
