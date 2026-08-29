@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Plus, User, LogOut } from "lucide-react";
+import { Plus, User, LogOut, ShieldCheck } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useStore } from "@/store/useStore";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ export function Navbar() {
   const [imgError, setImgError] = useState(false);
   const logout = useStore(state => state.logout);
   const currentUser = useStore(state => state.currentUser);
+  const isAdmin = currentUser?.role === 'Admin';
 
   const handleLogout = () => {
     logout();
@@ -39,6 +40,12 @@ export function Navbar() {
           )}
         </Link>
         <div className="flex flex-1 items-center justify-end space-x-4">
+          {isAdmin && (
+            <Button variant="outline" onClick={() => navigate("/admin")} className="shadow-sm">
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              Admin
+            </Button>
+          )}
           <Button onClick={() => navigate("/patients/new")} className="shadow-sm">
             <Plus className="mr-2 h-4 w-4" />
             New Patient

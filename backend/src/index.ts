@@ -13,7 +13,10 @@ import imageRoutes from './routes/images';
 import dopplerRoutes from './routes/doppler';
 import dopplerImagesRoutes from './routes/dopplerImages';
 import fileRoutes from './routes/files';
+import adminRoutes from './routes/admin';
 import { authMiddleware } from './middleware/auth';
+import { requirePasswordSet } from './middleware/requirePasswordSet';
+import { requireAdmin } from './middleware/requireAdmin';
 
 // Load env vars
 dotenv.config();
@@ -85,14 +88,21 @@ app.get('/api/health', (req: Request, res: Response) => {
 // Auth Route (rate-limited login)
 app.use('/api/auth', loginLimiter, authRoutes);
 
-// All routes below require a valid JWT — authMiddleware enforces this on every request
-app.use('/api/patients',      authMiddleware, patientRoutes);
-app.use('/api/assessments',   authMiddleware, assessmentRoutes);
-app.use('/api/legs',          authMiddleware, legRoutes);
-app.use('/api/images',        authMiddleware, imageRoutes);
-app.use('/api/doppler',       authMiddleware, dopplerRoutes);
-app.use('/api/doppler-images', authMiddleware, dopplerImagesRoutes);
-app.use('/api/files',         authMiddleware, fileRoutes);
+// All routes below require a valid JWT (authMiddleware) AND a completed
+// password reset (requirePasswordSet) on every request — a doctor who still
+// has must_reset_password=true gets 403 PASSWORD_RESET_REQUIRED from all of
+// these regardless of what the frontend does, so the mandatory reset screen
+// can't be bypassed by calling the API directly. The one authenticated route
+// deliberately left off this list is POST /api/auth/change-password (see
+// routes/auth.ts), since a must-reset doctor has to be able to reach it.
+app.use('/api/patients',      authMiddleware, requirePasswordSet, patientRoutes);
+app.use('/api/assessments',   authMiddleware, requirePasswordSet, assessmentRoutes);
+app.use('/api/legs',          authMiddleware, requirePasswordSet, legRoutes);
+app.use('/api/images',        authMiddleware, requirePasswordSet, imageRoutes);
+app.use('/api/doppler',       authMiddleware, requirePasswordSet, dopplerRoutes);
+app.use('/api/doppler-images', authMiddleware, requirePasswordSet, dopplerImagesRoutes);
+app.use('/api/files',         authMiddleware, requirePasswordSet, fileRoutes);
+app.use('/api/admin',         authMiddleware, requirePasswordSet, requireAdmin, adminRoutes);
 
 // 404 Catch-All Handler (Requirement 31)
 app.use('*', (req: Request, res: Response) => {
