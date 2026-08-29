@@ -16,7 +16,7 @@ export function Navbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-40 w-full border-b bg-white">
+    <nav className="sticky top-0 z-40 w-full border-b bg-white print:hidden">
       <div className="container mx-auto flex h-24 items-center px-4 sm:px-8">
         <Link to="/" className="flex items-center hover:opacity-90 transition-opacity">
           {imgError ? (

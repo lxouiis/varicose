@@ -396,7 +396,13 @@ export function AssessmentReportPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pb-20">
-      <div className="flex items-center justify-between">
+      {/* print:hidden — this is page chrome (back button, title, action buttons),
+          not report content. window.print() prints the whole page, so without
+          this it shows up above the actual report in both the print preview
+          and any "print to PDF" output. The "Download PDF" button's own
+          html2canvas capture is scoped to reportRef below, which already
+          excludes this row — see handleDownload. */}
+      <div className="flex items-center justify-between print:hidden">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
             <ArrowLeft className="h-5 w-5" />
