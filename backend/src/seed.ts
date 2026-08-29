@@ -23,6 +23,23 @@ async function main() {
   });
   console.log('Upserted doctor dr.irannahittalmani@jnmc.edu (role: Admin)');
 
+  // Throwaway local-only admin for quick sanity-testing the login flow
+  // itself, independent of the real seeded account above. must_reset_password:
+  // false — no extra steps, straight into the dashboard.
+  const quickAdminPassword = await bcrypt.hash('12345', 10);
+  await prisma.doctor.upsert({
+    where: { email: 'admin@edu' },
+    update: { password: quickAdminPassword, role: 'Admin', must_reset_password: false },
+    create: {
+      email: 'admin@edu',
+      password: quickAdminPassword,
+      name: 'Test Admin',
+      role: 'Admin',
+      must_reset_password: false,
+    },
+  });
+  console.log('Upserted doctor admin@edu (role: Admin, password: 12345)');
+
   // A couple of non-admin doctor accounts, matching this deployment's real
   // role values, for local testing of the forced-reset flow. Left with
   // must_reset_password: true (the default) and the shared default
